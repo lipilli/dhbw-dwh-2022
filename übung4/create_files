@@ -1,0 +1,108 @@
+-- insert into staging.kunde (kunde_id, vorname, nachname, anrede, geschlecht, geburtsdatum, wohnort, quelle)
+-- values (814218, 'Hannes', 'Müller', 'Herr', 'männlich', to_date('24.08.1999', 'DD.MM.YYYY'), 7, 'CRM');
+-- insert into staging.fahrzeug (fin, kunde_id, baujahr, modell, quelle)
+-- values ('SCC13186131313135', 814218, 1985, 'Evija', 'Fahrzeug DB');
+-- insert into staging.kfzzuordnung (fin, kfz_kennzeichen, quelle)
+-- values ('SCC13186131313135', 'MUL-T 2', 'Fahrzeug DB');
+
+
+
+
+-------------------------------------------
+-------------------------------------------
+
+-- INSERT INTO table2 (column1, column2, column3, ...)
+-- SELECT column1, column2, column3, ...
+-- FROM table1
+-- WHERE condition;
+
+
+
+-- Kunde -----------------------------------------------------
+insert into mart.d_kunde (
+     kunde_id,
+     vorname,
+     nachname,
+     anrede,
+     geschlecht,
+     geburtsdatum,
+     wohnort_id,
+     land,
+     ort
+)
+select
+	sk.kunde_id ,
+	sk.vorname ,
+	sk.nachname,
+	sk.anrede ,
+	sk.geschlecht ,
+	sk.geburtsdatum ,
+	sk.wohnort,
+	so.ort,
+	sl.land
+from staging.kunde as sk
+join staging.ort as so on so.ort_id = sk.wohnort
+left join staging.land sl on so.land_id = sl.land_id;
+
+-- Fahrzeug -----------------------------------------------------
+
+insert into mart.d_fahrzeug (  
+	fin, 
+	kfz_kennzeichen, 
+	baujahr, 
+	modell,
+	hersteller
+)
+select
+     sf.fin, 
+	 sk.kfz_kennzeichen,
+	 sf.baujahr, 
+	 sf.modell,
+	 sh.hersteller
+from staging.fahrzeug as sf
+	join staging.kfzzuordnung as sk on sf.fin = sk.fin
+	join staging.hersteller as sh on sf.hersteller_code = sh.hersteller_code;
+	
+	
+-- ort -----------------------------------------------------
+insert into mart.d_ort (  
+	ort, 
+	land
+)
+select
+     so.ort,
+	 sl.land
+from staging.ort as so
+	join staging.land as sl on so.land_id = sl.land_id;
+
+
+-- Faktentabelle 
+
+insert into mart.f_fzg_messung (
+	d_fahrzeug_id,
+    d_ort_id,
+    d_kunde_id,
+    messung_erzeugt,
+    empfang_eingetroffen,
+    geschwindigkeit
+)
+select
+	mf.d_fahrzeug_id,
+    mo.d_ort_id,
+    mk.d_kunde_id,
+    sm.erstellt_am,
+	to_timestamp(left(sm.payload ->> 'zeit',19 ), 'YYYY-MM-DD HH24:MI:SS'),
+	cast(sm.payload ->> 'geschwindigkeit' as integer)
+from 
+	staging.fahrzeug as sf, 
+	staging.messung as sm, 
+	staging.ort as so,
+	mart.d_fahrzeug as mf, 
+	mart.d_kunde as mk, 
+	mart.d_ort as mo
+where
+	sf.fin=(sm.payload ->> 'fin') and
+    sf.fin=mf.fin and
+    sf.kunde_id=mk.kunde_id and
+    mo.ort=so.ort and
+    so.ort_id=cast(sm.payload ->> 'ort' as integer);
